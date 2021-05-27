@@ -273,7 +273,10 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 	}
 
 	void cambiarTurno() {
-		this->turno = !this->turno;		
+		this->turno = !this->turno;	
+		if (mDynWorld->getBtWorld()->getCollisionObjectArray().size() > 3) {
+			mDynWorld->getBtWorld()->removeCollisionObject(mDynWorld->getBtWorld()->getCollisionObjectArray()[3]);
+		}
 		agarrarPelota();
 	}
 
