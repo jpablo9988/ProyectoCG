@@ -14,6 +14,11 @@
  */
 
 #include "OgreApplicationContext.h"
+#include <OgreCamera.h>
+#include <OgreResourceGroupManager.h>
+#include <OgreFrameListener.h>
+#include <OgreViewport.h>
+#include <OgreTrays.h>
 #include "OgreCameraMan.h"
 #include "BtOgre.h"
 #include <stdio.h>
@@ -22,6 +27,8 @@
 #include <iostream>
 #include <Windows.h>
 #include <string>
+#include <stdlib.h>
+#include <time.h>
 #include "conio.h"
 
 using namespace Ogre;
@@ -34,7 +41,7 @@ using namespace std;
  * =====================================================================================
  */
 
-class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreBites::InputListener
+class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreBites::InputListener, public OgreBites::TrayListener
 {
     std::unique_ptr<BtOgre::DynamicsWorld> mDynWorld;
 
@@ -54,14 +61,93 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 	Ogre::Bone* hand;
 
 	btRigidBody* bananoR;
+	btRigidBody* ogroR;
+	btRigidBody* ogro2R;
+	btRigidBody* mapaR;
 
 	bool turno = true;
 
+	int vidas1 = 5;
+	int vidas2 = 5;
+
+	String nombre1 = "Mono 1";
+	String nombre2 = "Mono 2";
 
 	OgreBites::CameraMan *mCamMan;
 
 	bool mDebugOn;
     std::unique_ptr<BtOgre::DebugDrawer> mDbgDraw;
+
+	struct OgroContactResultCallback : public btCollisionWorld::ContactResultCallback {
+
+		OgroContactResultCallback(BtOgreTestApplication* ptr) : context(ptr) {}
+
+		btScalar addSingleResult(btManifoldPoint& cp,
+			const btCollisionObjectWrapper* colObj0Wrap,
+			int partId0,
+			int index0,
+			const btCollisionObjectWrapper* colObj1Wrap,
+			int partId1,
+			int index1)
+		{			
+			if (context->turno) {
+				context->retirarOgro(false);
+				context->mostrarVidas(false);
+				context->validarGanador();
+			}			
+			_cprintf("\n-------------------GOLPEO 1------------------------");
+			return 0;
+		}
+
+		BtOgreTestApplication* context;
+
+	};
+
+	struct Ogro2ContactResultCallback : public btCollisionWorld::ContactResultCallback {
+
+		Ogro2ContactResultCallback(BtOgreTestApplication* ptr) : context(ptr) {}
+
+		btScalar addSingleResult(btManifoldPoint& cp,
+			const btCollisionObjectWrapper* colObj0Wrap,
+			int partId0,
+			int index0,
+			const btCollisionObjectWrapper* colObj1Wrap,
+			int partId1,
+			int index1)
+		{
+			if (!context->turno) {
+				context->retirarOgro(true);
+				context->mostrarVidas(true);
+				context->validarGanador();
+			}			
+			_cprintf("\n-------------------GOLPEO 2------------------------");
+			return 0;
+		}
+
+		BtOgreTestApplication* context;
+
+	};
+
+	struct MapaContactResultCallback : public btCollisionWorld::ContactResultCallback {
+
+		MapaContactResultCallback(BtOgreTestApplication* ptr) : context(ptr) {}
+
+		btScalar addSingleResult(btManifoldPoint& cp,
+			const btCollisionObjectWrapper* colObj0Wrap,
+			int partId0,
+			int index0,
+			const btCollisionObjectWrapper* colObj1Wrap,
+			int partId1,
+			int index1)
+		{
+			_cprintf("\n-------------------CAMBIOOOOOOOO------------------------");
+			context->cambiarTurno();
+			return 0;
+		}
+
+		BtOgreTestApplication* context;
+
+	};
 
     public:
 	BtOgreTestApplication() : OgreBites::ApplicationContext("BtOgre")
@@ -81,7 +167,15 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 	    OgreBites::ApplicationContext::setup();
 	    addInputListener(this);
 
+		srand(time(NULL));
+
 	    mSceneMgr = getRoot()->createSceneManager();
+
+		mSceneMgr->addRenderQueueListener(getOverlaySystem());
+
+		//OgreBites::TrayManager* mTrayMgr = new OgreBites::TrayManager("InterfaceName", getRenderWindow(), this);
+		//OgreBites::Button* b = mTrayMgr->OgreBites::TrayManager::createButton(OgreBites::TrayLocation::TL_TOPLEFT, "MyButton", "Click Me!");
+		//delete mTrayMgr;
 
 	    // register our scene with the RTSS
 	    Ogre::RTShader::ShaderGenerator* shadergen = Ogre::RTShader::ShaderGenerator::getSingletonPtr();
@@ -122,7 +216,7 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 
 	    //----------------------------------------------------------
 	    // Ninja!
-	    //----------------------------------------------------------
+	    //----------------------------------------------------------		
 
 		//Create Ogre stuff.
 	    mNinjaEntity = mSceneMgr->createEntity("ninjaEntity", "Player.mesh");
@@ -157,16 +251,16 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		}*/
 			
 		/*hand = skl->getBone("Hand.R");
-		hand->setManuallyControlled(true);*/		
+		hand->setManuallyControlled(true);*/				
 
-
+		ubicarOgros();
 		cambiarTurno();
 
 	    //Create the Body.
         //this->bananoR = mDynWorld->addRigidBody(5, mNinjaEntity, BtOgre::CT_SPHERE);
 		//mDynWorld->addRigidBody(5, mNinja2Entity, BtOgre::CT_SPHERE);
-		mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
-		mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);		
+		ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+		ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);		
 
 		//this->bananoR->setActivationState(0);
 
@@ -181,8 +275,118 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 	    mSceneMgr->getRootSceneNode()->createChildSceneNode("groundNode")->attachObject(mGroundEntity);
 
 	    //Create the Body.
-        mDynWorld->addRigidBody(0, mGroundEntity, BtOgre::CT_TRIMESH);
+        mapaR = mDynWorld->addRigidBody(0, mGroundEntity, BtOgre::CT_TRIMESH);
+
+
+
+		_cprintf("\n-------------------------------------------------------");
+		_cprintf("\nBienvenidos!!! :D \n");
+		_cprintf("\n-------------------------------------------------------");
 		
+		_cprintf("\nIngrese el nombre del jugador 1: \n");
+		_cscanf("%s", &nombre1);
+
+		_cprintf("\nIngrese el nombre del jugador 2: \n");
+		_cscanf("%s", &nombre2);
+
+		if (nombre1 == "") {
+			nombre1 = "Mono 1";
+		}
+
+		if (nombre2 == "") {
+			nombre2 = "Mono 2";
+		}
+
+		int vidas = 0;
+		_cprintf("\nIngrese la cantidad de vidas de los jugadores: \n");
+		_cscanf("%d", &vidas);
+
+		if (vidas != NULL && vidas != 5) {
+			vidas1 = vidas;
+			vidas2 = vidas;
+		}
+
+		_cprintf("\n-------------------------------------------------------");
+		_cprintf("\n Que inicie el Juego !!! :D \n");
+		_cprintf("\n-------------------------------------------------------");
+
+	}
+
+	void validarGanador() {
+		if (vidas1 <= 0 || vidas2 <= 0) {
+
+			char ch;
+
+			_cprintf("\n-------------------------------------------------------");
+
+			if (vidas1 <= 0) {
+				_cprintf("\nFelicidades %s !!!", nombre2);		
+			}
+			else if(vidas2 <= 0) {
+				_cprintf("\nFelicidades %s !!!", nombre1);				
+			}
+
+			_cprintf("\nHas ganado :D");
+			_cprintf("\n-------------------------------------------------------");
+
+			_cprintf("\nGracias por jugar :D\n");
+			_cscanf("%c", &ch);
+
+			// TODO: Cerrar la aplicación o implementar volver a jugar
+
+		}
+		else {
+			ubicarOgros();
+		}		
+	}
+
+	void mostrarVidas(bool ogro) {
+
+		char ch;
+
+		_cprintf("\n-------------------------------------------------------");	
+
+		if (ogro) {
+			_cprintf("\nGran Lanzamiento, punto para el %s :D", nombre2);
+			vidas1 -= 1;
+		}
+		else {
+			_cprintf("\nGran Lanzamiento, punto para el %s :D", nombre1);
+			vidas2 -= 1;
+		}
+
+		cambiarTurno();
+
+		_cprintf("\nVidas Mono 1: %d", vidas1);
+		_cprintf("\nVidas Mono 2: %d", vidas2);
+		_cprintf("\n-------------------------------------------------------");
+		_cprintf("\nPresiona una tecla para continuar...\n");
+
+		_cscanf("%c", &ch);
+
+	}
+
+	void retirarOgro(bool ogro) {
+
+		if (ogro) {
+			this->mOgro2Node->rotate(Ogre::Quaternion(Ogre::Degree(90), Ogre::Vector3(1, 0, 0)), Ogre::Node::TransformSpace::TS_WORLD);
+			ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+		}
+		else {
+			this->mOgroNode->rotate(Ogre::Quaternion(Ogre::Degree(90), Ogre::Vector3(1, 0, 0)), Ogre::Node::TransformSpace::TS_WORLD);
+			ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+		}
+
+	}
+
+	void ubicarOgros() {
+
+		this->mOgroNode->setPosition(Ogre::Vector3(rand() % (21) - 10, 5, rand() % (6) + 5));
+		ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+
+		this->mOgro2Node->setPosition(Ogre::Vector3(rand() % (21) - 10, 5, -(rand() % (6) + 5)));
+		ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+
 	}
 
 	bool keyPressed(const OgreBites::KeyboardEvent& evt)
@@ -205,27 +409,40 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 			//this->neck->pitch(Ogre::Radian(0.1));	
 			//hand->removeChild("mNinjaNode");
 
+			this->bananoR = mDynWorld->addRigidBody(5, mNinjaEntity, BtOgre::CT_SPHERE);
+			this->bananoR->setActivationState(1);
+
 			double direccion[3] = {0.0, 0.0, 0.0};
 			double potencia = 5;
 
-			//_cprintf("\nOgro está en: %lf, %lf, %lf \n", mOgroNode->getPosition()[0], mOgroNode->getPosition()[1], mOgroNode->getPosition()[2]);
 			_cprintf("\nIngrese el vector de dirección (separado por espacios - Doubles): \n");
 			_cscanf("%lf %lf %lf", &direccion[0], &direccion[1], &direccion[2]);
 			_cprintf("\nIngrese la potencia del disparo (Double): \n");
-			_cscanf("%lf", &potencia);
-			this->bananoR = mDynWorld->addRigidBody(5, mNinjaEntity, BtOgre::CT_SPHERE);
-			this->bananoR->setActivationState(1);
-			this->bananoR->applyCentralImpulse(btVector3(direccion[0] * potencia, direccion[1] * potencia, direccion[2] * potencia));
+			_cscanf("%lf", &potencia);			
+			this->bananoR->applyCentralImpulse(btVector3(direccion[0] * potencia, direccion[1] * potencia, direccion[2] * potencia));			
+
+			if (turno) {
+				Ogro2ContactResultCallback callbackOgro2(this);
+				mDynWorld->getBtWorld()->contactPairTest(bananoR, ogro2R, callbackOgro2);
+			}
+			else {
+				OgroContactResultCallback callbackOgro(this);
+				mDynWorld->getBtWorld()->contactPairTest(bananoR, ogroR, callbackOgro);
+			}
+
+			MapaContactResultCallback callbackMapa(this);
+			mDynWorld->getBtWorld()->contactPairTest(bananoR, mapaR, callbackMapa);
+
 		}
 		else if (evt.keysym.sym == SDLK_UP)
 		{
 			if (this->turno) {
 				this->mOgro2Node->translate(Ogre::Vector3(0, 0, 1));
-				mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+				ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
 			}
 			else {
 				this->mOgroNode->translate(Ogre::Vector3(0, 0, -1));
-				mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+				ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
 			}
 			agarrarPelota();
 		}
@@ -233,11 +450,11 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		{
 			if (this->turno) {
 				this->mOgro2Node->translate(Ogre::Vector3(0, 0, -1));
-				mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+				ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
 			}
 			else {
 				this->mOgroNode->translate(Ogre::Vector3(0, 0, 1));
-				mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+				ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
 			}
 			agarrarPelota();
 		}
@@ -245,11 +462,11 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		{
 			if (this->turno) {
 				this->mOgro2Node->translate(Ogre::Vector3(-1, 0, 0));
-				mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+				ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
 			}
 			else {
 				this->mOgroNode->translate(Ogre::Vector3(1, 0, 0));
-				mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+				ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
 			}
 			agarrarPelota();
 		}
@@ -257,11 +474,11 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		{
 			if (this->turno) {
 				this->mOgro2Node->translate(Ogre::Vector3(1, 0, 0));
-				mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
+				ogro2R = mDynWorld->addRigidBody(5, mOgro2Entity, BtOgre::CT_BOX);
 			}
 			else {
 				this->mOgroNode->translate(Ogre::Vector3(-1, 0, 0));
-				mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
+				ogroR = mDynWorld->addRigidBody(5, mOgroEntity, BtOgre::CT_BOX);
 			}
 			agarrarPelota();
 		}
@@ -275,7 +492,7 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 	void cambiarTurno() {
 		this->turno = !this->turno;	
 		if (mDynWorld->getBtWorld()->getCollisionObjectArray().size() > 3) {
-			mDynWorld->getBtWorld()->removeCollisionObject(mDynWorld->getBtWorld()->getCollisionObjectArray()[3]);
+			//mDynWorld->getBtWorld()->removeCollisionObject(mDynWorld->getBtWorld()->getCollisionObjectArray()[3]);
 		}
 		agarrarPelota();
 	}
@@ -284,22 +501,54 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		if (this->turno) {
 			Ogre::SkeletonInstance* skl = mOgro2Entity->getSkeleton();
 			hand = skl->getBone("Hand.R");
-			/*hand->setManuallyControlled(true);
-			hand->addChild(mNinjaNode);*/
+			/*hand->setManuallyControlled(true);*/
+			//hand->addChild(mNinjaNode);
 			//_cprintf("MANO POSICION: %lf, %lf, %lf", hand->_getDerivedPosition()[0] + mOgro2Node->getPosition()[0], hand->_getDerivedPosition()[1] + mOgro2Node->getPosition()[1], hand->_getDerivedPosition()[2] + +mOgro2Node->getPosition()[2]);
-			//mNinjaNode->setPosition(hand->_getDerivedPosition() + mOgro2Node->getPosition());			
-			mNinjaNode->setPosition(obtenerPosManoR(mOgro2Node->getPosition()));
+			//mNinjaNode->setPosition(hand->_getDerivedPosition() + mOgro2Node->getPosition());		
+			mNinjaNode->setPosition(mOgro2Node->getPosition());
+			//mNinjaNode->setPosition(hand->getPosition());
+			mNinjaNode->translate(Ogre::Vector3(0, 0, 2));
 		}
 		else {
 			Ogre::SkeletonInstance* skl = mOgroEntity->getSkeleton();
 			hand = skl->getBone("Hand.R");
-			/*hand->setManuallyControlled(true);
-			hand->addChild(mNinjaNode);*/
+			/*hand->setManuallyControlled(true);*/
+			//hand->addChild(mNinjaNode);
 			//_cprintf("MANO POSICION: %lf, %lf, %lf", hand->_getDerivedPosition()[0] + mOgroNode->getPosition()[0], hand->_getDerivedPosition()[1] + mOgroNode->getPosition()[1], hand->_getDerivedPosition()[2] + +mOgroNode->getPosition()[2]);
 			//mNinjaNode->setPosition(hand->_getDerivedPosition() + mOgroNode->getPosition());
-			mNinjaNode->setPosition(obtenerPosManoR(mOgroNode->getPosition()));
+			//mNinjaNode->setPosition(obtenerPosManoR(mOgroNode->getPosition()));
+			mNinjaNode->setPosition(mOgroNode->getPosition());
+			//mNinjaNode->setPosition(hand->getPosition());
+			mNinjaNode->translate(Ogre::Vector3(0, 0, -2));
 		}		
 		
+	}
+
+	Ogre::Vector3 GetBoneWorldPosition(Entity* ent, Bone bone)
+	{
+		Vector3 world_position = bone._getDerivedPosition();
+
+		//multiply with the parent derived transformation
+		Node* pParentNode = ent->getParentNode();
+		SceneNode* pSceneNode = ent->getParentSceneNode();
+		while (pParentNode != NULL)
+		{
+			//process the current i_Node
+			if (pParentNode != pSceneNode)
+			{
+				//this is a tag point (a connection point between 2 entities). which means it has a parent i_Node to be processed
+				/*Ogre::TagPoint* tp = static_cast<Ogre::TagPoint*> (pParentNode);
+				world_position = tp->_getFullLocalTransform() * world_position;
+				pParentNode = (pParentNode as TagPoint).ParentEntity.ParentNode;*/
+			}
+			else
+			{
+				//this is the scene i_Node meaning this is the last i_Node to process
+				world_position = pParentNode->_getFullTransform() * world_position;
+				break;
+			}
+		}
+		return world_position;
 	}
 
 	Ogre::Vector3 obtenerPosManoR(Ogre::Vector3 pos) {
@@ -312,7 +561,7 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
 		suma[0] += pos[0];
 		suma[1] -= 5;
 		suma[2] += pos[2];
-		_cprintf("SUMA: %lf, %lf, %lf", suma[0], suma[1], suma[2]);
+		//_cprintf("SUMA: %lf, %lf, %lf", suma[0], suma[1], suma[2]);
 		return suma;
 	}
 
@@ -329,44 +578,6 @@ class BtOgreTestApplication : public OgreBites::ApplicationContext, public OgreB
         return true;
     }
 };
-
-void showWin32Console()
-{
-	static const WORD MAX_CONSOLE_LINES = 500;
-	int hConHandle;
-	long lStdHandle;
-	CONSOLE_SCREEN_BUFFER_INFO coninfo;
-	FILE* fp;
-	// allocate a console for this app
-	AllocConsole();
-	// set the screen buffer to be big enough to let us scroll text
-	GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &coninfo);
-	coninfo.dwSize.Y = MAX_CONSOLE_LINES;
-	SetConsoleScreenBufferSize(GetStdHandle(STD_OUTPUT_HANDLE),
-		coninfo.dwSize);
-	// redirect unbuffered STDOUT to the console
-	lStdHandle = (long)GetStdHandle(STD_OUTPUT_HANDLE);
-	hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
-	fp = _fdopen(hConHandle, "w");
-	*stdout = *fp;
-	setvbuf(stdout, NULL, _IONBF, 0);
-	// redirect unbuffered STDIN to the console
-	lStdHandle = (long)GetStdHandle(STD_INPUT_HANDLE);
-	hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
-	fp = _fdopen(hConHandle, "r");
-	*stdin = *fp;
-	setvbuf(stdin, NULL, _IONBF, 0);
-	// redirect unbuffered STDERR to the console
-	lStdHandle = (long)GetStdHandle(STD_ERROR_HANDLE);
-	hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
-	fp = _fdopen(hConHandle, "w");
-	*stderr = *fp;
-	setvbuf(stderr, NULL, _IONBF, 0);
-	// make cout, wcout, cin, wcin, wcerr, cerr, wclog and clog
-	// point to console as well
-	std::ios::sync_with_stdio(true);
-
-}
 
 /*
  * ===  FUNCTION  ======================================================================
